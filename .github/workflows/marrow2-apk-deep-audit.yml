@@ -38,8 +38,16 @@ jobs:
               sha256sum "$apk"
               stat -c 'bytes=%s' "$apk"
               echo
+              echo "[FILE/SIGNATURE]"
+              file "$apk" || true
+              stat -c "bytes=%s" "$apk" || true
+              xxd -l 32 "$apk" || true
+              echo
               echo "[ZIP/APK TEST]"
-              unzip -t "$apk" | tail -n 3
+              unzip -t "$apk" 2>&1 | tail -n 8 || true
+              echo
+              echo "[ZIPINFO]" 
+              zipinfo -v "$apk" 2>&1 | head -n 80 || true
               echo
               echo "[TOP-LEVEL / COMPLETE ENTRY COUNT]"
               unzip -Z1 "$apk" | wc -l
