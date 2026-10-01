@@ -1,0 +1,53 @@
+name: Marrow-2 ZIP Structure Audit
+
+on:
+  push:
+    paths:
+      - "base.part1.apk.zip"
+      - "base.part2.apk.zip"
+      - "base.part3.apk.zip"
+      - ".github/workflows/marrow2-zip-audit.yml"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Inspect ZIPs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p audit
+          {
+            echo "Marrow-2 ZIP STRUCTURE AUDIT"
+            echo "commit=$GITHUB_SHA"
+            echo
+            for f in base.part1.apk.zip base.part2.apk.zip base.part3.apk.zip; do
+              echo "===== $f ====="
+              stat -c 'size=%s sha256=%n' "$f" 2>/dev/null || true
+              sha256sum "$f"
+              echo "-- unzip test --"
+              unzip -t "$f" | tail -n 3 || true
+              echo "-- entry count --"
+              unzip -Z1 "$f" | wc -l
+              echo "-- first 80 entries --"
+              unzip -Z1 "$f" | head -n 80
+              echo "-- archive types --"
+              unzip -Z1 "$f" | grep -Ei '\.(apk|zip|jar|dex|xml|json|png|webp|so)$' | head -n 200 || true
+              echo
+            done
+            echo "===== ALL UNIQUE ENTRY NAMES ====="
+            for f in base.part1.apk.zip base.part2.apk.zip base.part3.apk.zip; do
+              unzip -Z1 "$f"
+            done | sort -u | head -n 5000
+          } > audit/zip_structure.txt
+          cp audit/zip_structure.txt audit/README.txt
+      - name: Upload audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: marrow2-zip-structure-audit
+          path: audit/zip_structure.txt
+          if-no-files-found: error
