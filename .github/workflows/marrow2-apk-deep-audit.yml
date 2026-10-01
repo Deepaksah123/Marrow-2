@@ -1,6 +1,12 @@
 name: Marrow-2 APK Deep Audit
 
 on:
+  push:
+    paths:
+      - "base.part1.apk.zip"
+      - "base.part2.apk.zip"
+      - "base.part3.apk.zip"
+      - ".github/workflows/marrow2-apk-deep-audit.yml"
   workflow_dispatch:
 
 jobs:
