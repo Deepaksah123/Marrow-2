@@ -7,6 +7,7 @@ on:
       - "base.part2.apk.zip"
       - "base.part3.apk.zip"
       - ".github/workflows/marrow2-apk-deep-audit.yml"
+      - "audit_trigger.txt"
   workflow_dispatch:
 
 jobs:
