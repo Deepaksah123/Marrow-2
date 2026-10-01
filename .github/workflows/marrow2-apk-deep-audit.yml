@@ -18,99 +18,80 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Extract and audit APKs
+      - name: Extract split APK parts and audit combined APK
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p audit/apks
+
           for z in base.part1.apk.zip base.part2.apk.zip base.part3.apk.zip; do
             unzip -q -o "$z" -d audit/apks
           done
 
           {
-            echo "MARROW-2 APK DEEP AUDIT"
+            echo "MARROW-2 COMBINED SPLIT-APK DEEP AUDIT"
             echo "commit=$GITHUB_SHA"
             echo
-
-            for apk in audit/apks/base.part*.apk; do
-              echo "============================================================"
-              echo "APK: $apk"
-              echo "------------------------------------------------------------"
-              sha256sum "$apk"
-              stat -c 'bytes=%s' "$apk"
-              echo
-              echo "[FILE/SIGNATURE]"
-              file "$apk" || true
-              stat -c "bytes=%s" "$apk" || true
-              xxd -l 32 "$apk" || true
-              echo
-              echo "[ZIP/APK TEST]"
-              unzip -t "$apk" 2>&1 | tail -n 8 || true
-              echo
-              echo "[ZIPINFO]" 
-              zipinfo -v "$apk" 2>&1 | head -n 80 || true
-              echo
-              echo "[TOP-LEVEL / COMPLETE ENTRY COUNT]"
-              unzip -Z1 "$apk" | wc -l
-              echo
-              echo "[DEX]"
-              unzip -Z1 "$apk" | grep -E '(^|/)classes([0-9]+)?\\.dex$' || true
-              echo
-              echo "[LIBRARIES]"
-              unzip -Z1 "$apk" | grep -E '^lib/' || true
-              echo
-              echo "[ASSETS]"
-              unzip -Z1 "$apk" | grep -E '^assets/' | head -n 500 || true
-              echo
-              echo "[RES]"
-              unzip -Z1 "$apk" | grep -E '^res/' | head -n 500 || true
-              echo
-              echo "[META-INF]"
-              unzip -Z1 "$apk" | grep -E '^META-INF/' | head -n 200 || true
-              echo
-              echo "[CONTENT EXTENSION COUNTS]"
-              unzip -Z1 "$apk" | awk '
-                BEGIN {IGNORECASE=1}
-                {
-                  n=$0
-                  sub(/^.*\\//,"",n)
-                  if (n !~ /\\./) ext="[no_ext]"
-                  else { sub(/^.*\\./,"",n); ext="." tolower(n) }
-                  c[ext]++
-                }
-                END {for (e in c) print c[e], e}
-              ' | sort -nr
-              echo
-              echo "[AAPT BADGING]"
-              AAPT=$(find "${ANDROID_HOME:-/opt/android-sdk}" -type f -name aapt -o -name aapt2 2>/dev/null | head -n 1 || true)
-              if [ -n "$AAPT" ]; then
-                "$AAPT" dump badging "$apk" 2>&1 | head -n 120 || true
-              else
-                echo "aapt/aapt2 not found"
-              fi
-              echo
-              echo "[APKSIGNER]"
-              APKSIGNER=$(find "${ANDROID_HOME:-/opt/android-sdk}" -type f -name apksigner 2>/dev/null | head -n 1 || true)
-              if [ -n "$APKSIGNER" ]; then
-                "$APKSIGNER" verify --verbose "$apk" 2>&1 | head -n 120 || true
-              else
-                echo "apksigner not found"
-              fi
-              echo
+            echo "[RAW PARTS]"
+            for p in audit/apks/base.part*.apk; do
+              echo "--- $p ---"
+              stat -c "bytes=%s" "$p"
+              sha256sum "$p"
+              file "$p" || true
+              xxd -l 32 "$p" || true
             done
-
-            echo "============================================================"
-            echo "CROSS-APK UNIQUE ENTRY NAMES"
-            for apk in audit/apks/base.part*.apk; do
-              unzip -Z1 "$apk"
-            done | sort -u | head -n 20000
+            echo
+            echo "[CONCATENATION]"
+            cat audit/apks/base.part1.apk audit/apks/base.part2.apk audit/apks/base.part3.apk > audit/base_combined.apk
+            stat -c "combined_bytes=%s" audit/base_combined.apk
+            sha256sum audit/base_combined.apk
+            file audit/base_combined.apk || true
+            xxd -l 32 audit/base_combined.apk || true
+            echo
+            echo "[COMBINED ZIP TEST]"
+            unzip -t audit/base_combined.apk 2>&1 | tail -n 20 || true
+            echo
+            echo "[COMBINED ZIPINFO]"
+            zipinfo -v audit/base_combined.apk 2>&1 | head -n 120 || true
+            echo
+            echo "[ENTRY COUNT]"
+            unzip -Z1 audit/base_combined.apk | wc -l || true
+            echo
+            echo "[DEX]"
+            unzip -Z1 audit/base_combined.apk | grep -E '(^|/)classes([0-9]+)?\\.dex$' || true
+            echo
+            echo "[MANIFEST / RES / ASSETS / LIB / META-INF]"
+            unzip -Z1 audit/base_combined.apk | grep -E '^(AndroidManifest\\.xml|resources\\.arsc|res/|assets/|lib/|META-INF/)' | head -n 2000 || true
+            echo
+            echo "[EXTENSION COUNTS]"
+            unzip -Z1 audit/base_combined.apk | awk '
+              {
+                n=$0; sub(/^.*\\//,"",n)
+                if (n !~ /\\./) ext="[no_ext]"
+                else { sub(/^.*\\./,"",n); ext="." tolower(n) }
+                c[ext]++
+              }
+              END {for (e in c) print c[e], e}
+            ' | sort -nr || true
+            echo
+            echo "[AAPT BADGING]"
+            AAPT=$(find "${ANDROID_HOME:-/opt/android-sdk}" -type f -name aapt 2>/dev/null | head -n 1 || true)
+            if [ -n "$AAPT" ]; then
+              "$AAPT" dump badging audit/base_combined.apk 2>&1 | head -n 200 || true
+            else
+              echo "aapt not found"
+            fi
+            echo
+            echo "[APKSIGNER]"
+            APKSIGNER=$(find "${ANDROID_HOME:-/opt/android-sdk}" -type f -name apksigner 2>/dev/null | head -n 1 || true)
+            if [ -n "$APKSIGNER" ]; then
+              "$APKSIGNER" verify --verbose audit/base_combined.apk 2>&1 | head -n 200 || true
+            else
+              echo "apksigner not found"
+            fi
           } > audit/apk_deep_audit.txt
 
-          # Also save per-APK entry lists for exact downstream inspection.
-          for apk in audit/apks/base.part*.apk; do
-            b=$(basename "$apk" .apk)
-            unzip -Z1 "$apk" > "audit/${b}_entries.txt"
-          done
+          unzip -Z1 audit/base_combined.apk > audit/combined_entries.txt || true
 
       - name: Upload deep audit
         uses: actions/upload-artifact@v4
